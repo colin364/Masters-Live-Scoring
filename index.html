@@ -546,7 +546,7 @@ function renderTeamCards(ranked){
   }).join('');
 }
 
-
+function renderTeamRow(td,idx){
   const rank=idx+1;
   const isOpen=expandedIds.has(td.team.id);
   const rb=rank<=3?`<div class="rank-badge rk${rank}">${rank}</div>`:`<div class="rank-badge rkN">${rank}</div>`;
