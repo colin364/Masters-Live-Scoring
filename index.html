@@ -215,6 +215,10 @@ let lastUpdated = null;
 let pollTimer = null;
 let pendingAdminAction = null; // 'scores' | 'cut'
 
+// ── Supabase config (hardcoded for viewers) ──
+const SUPABASE_URL = 'https://bhsuvexkfznspapevhlv.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoc3V2ZXhrZnpuc3BhcGV2aGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2ODAzNTQsImV4cCI6MjA5MTI1NjM1NH0.eJqIJcgNWIqKOL8dY0DWslFBh_x80iBeYOZ2s8smzpc';
+
 const CFG_KEY = 'masters-sb-cfg-v2';
 function getCfg(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY)||'null'); }catch{return null;} }
 function saveCfg(c){ localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
@@ -296,9 +300,9 @@ function timeStr(d){if(!d)return'';const t=new Date(d);return t.toLocaleTimeStri
 // ══════════════════════════════════════════════
 //  SUPABASE
 // ══════════════════════════════════════════════
-async function connectSupabase(cfg){
+async function connectSupabase(pin){
   const { createClient } = supabase;
-  sb = createClient(cfg.url, cfg.key);
+  sb = createClient(SUPABASE_URL, SUPABASE_KEY);
   // Test + load
   const { data, error } = await sb.from('game_state').select('state,updated_at').eq('id',1).single();
   if(error) throw new Error(error.message);
@@ -331,8 +335,7 @@ async function saveG(){
 //  RENDER
 // ══════════════════════════════════════════════
 function render(){
-  const cfg=getCfg();
-  if(!cfg||!sb){
+  if(!sb){
     document.getElementById('app').innerHTML=renderConnect();
   } else {
     document.getElementById('app').innerHTML=renderTournament();
@@ -347,47 +350,16 @@ function renderConnect(){
     <div class="connect-card">
       <div class="connect-eyebrow">Augusta · 2026</div>
       <div class="connect-title">Masters Majors</div>
-      <div class="connect-sub">Connect your Supabase project to sync scores live</div>
+      <div class="connect-sub">Live scoring · 8 teams · The Masters</div>
 
-      <div class="field-group">
-        <label class="field-label">Supabase Project URL</label>
-        <input class="field-input" id="sb-url" placeholder="https://xxxxxxxxxxxx.supabase.co" autocomplete="off">
-      </div>
-      <div class="field-group">
-        <label class="field-label">Supabase Anon Key</label>
-        <input class="field-input" id="sb-key" placeholder="eyJhbGciOiJIUzI1NiIs..." autocomplete="off">
-        <div class="field-hint">Settings → API → Project API Keys → anon public</div>
+      <div class="field-group" style="margin-top:24px">
+        <label class="field-label">Admin PIN <span style="color:var(--text-lt);font-weight:400">(optional — for score editing only)</span></label>
+        <input class="field-input" id="sb-pin" type="password" placeholder="Leave blank to view" maxlength="8" style="letter-spacing:4px">
+        <div class="field-hint">Viewers just click Connect — no PIN needed</div>
       </div>
 
-      <hr class="connect-divider">
-
-      <div class="field-group">
-        <label class="field-label">Admin PIN <span style="color:var(--text-lt);font-weight:400">(score editing)</span></label>
-        <input class="field-input" id="sb-pin" type="password" placeholder="Choose a 4-digit PIN" maxlength="8" style="letter-spacing:4px">
-        <div class="field-hint">Other viewers leave this blank — they can view but not edit scores</div>
-      </div>
-
-      <div class="connect-note">
-        <strong>First time?</strong> Go to <strong>supabase.com</strong> → New project → SQL Editor → run the setup SQL (see instructions below), then paste your URL and key above.
-      </div>
-
-      <button class="btn-connect" id="connectBtn">Connect →</button>
+      <button class="btn-connect" id="connectBtn">View Scoreboard →</button>
       <div class="connect-err" id="connectErr"></div>
-
-      <hr class="connect-divider">
-      <details style="font-size:13px;color:var(--text-mid)">
-        <summary style="cursor:pointer;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:2px;color:var(--text-lt);text-transform:uppercase;margin-bottom:8px">Supabase Setup SQL</summary>
-        <pre style="background:#f5f0e8;border-radius:4px;padding:12px;font-size:12px;overflow-x:auto;margin-top:8px;line-height:1.6">CREATE TABLE game_state (
-  id INT PRIMARY KEY,
-  state JSONB,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-INSERT INTO game_state (id, state)
-VALUES (1, '{}');
-
--- Disable row-level security
-ALTER TABLE game_state DISABLE ROW LEVEL SECURITY;</pre>
-      </details>
     </div>
   </div>`;
 }
@@ -643,18 +615,13 @@ function renderCutModal(){
 function bind(){
   // Connect screen
   document.getElementById('connectBtn')?.addEventListener('click', async()=>{
-    const url=(document.getElementById('sb-url')?.value||'').trim();
-    const key=(document.getElementById('sb-key')?.value||'').trim();
     const pin=(document.getElementById('sb-pin')?.value||'').trim();
     const errEl=document.getElementById('connectErr');
-    if(!url||!key){ errEl.textContent='Please enter your Project URL and anon key.'; errEl.style.display='block'; return; }
-    errEl.style.display='none';
     const btn=document.getElementById('connectBtn');
     btn.textContent='Connecting…'; btn.disabled=true;
     try{
-      const cfg={url,key,pin};
-      await connectSupabase(cfg);
-      saveCfg(cfg);
+      await connectSupabase(pin);
+      saveCfg({url:SUPABASE_URL, key:SUPABASE_KEY, pin});
       if(pin) isAdmin=true;
       render();
     }catch(e){
@@ -814,15 +781,11 @@ function toast(msg,type=''){
 // ══════════════════════════════════════════════
 (async()=>{
   const cfg=getCfg();
-  if(cfg){
-    try{
-      await connectSupabase(cfg);
-      // If they saved a PIN, they're the admin on this browser
-      if(cfg.pin) isAdmin=true;
-    }catch(e){
-      // Config stale or connection failed — show connect screen
-      localStorage.removeItem(CFG_KEY);
-    }
+  try{
+    await connectSupabase(cfg?.pin||'');
+    if(cfg?.pin) isAdmin=true;
+  }catch(e){
+    // Will show connect screen as fallback
   }
   render();
 })();
