@@ -141,6 +141,30 @@ html,body{min-height:100%;font-family:'Crimson Pro',Georgia,serif;background:var
 .pin-hint{font-size:14px;color:var(--text-lt);margin-top:10px;font-style:italic}
 .pin-err{color:var(--red);font-size:13px;margin-top:8px;display:none}
 
+/* ── TEAM CARDS ─────────────── */
+.section-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin:32px 0 14px}
+.team-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px}
+.tc{background:var(--cream);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.tc-header{background:var(--green);padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
+.tc-team-name{font-family:'Playfair Display',serif;font-size:17px;font-weight:700;color:var(--cream)}
+.tc-team-score{font-family:'DM Mono',monospace;font-size:18px;font-weight:500}
+.tc-team-score.under{color:var(--gold-lt)}.tc-team-score.over{color:#ff9999}.tc-team-score.even{color:rgba(253,249,240,.6)}
+.tc-rank{font-family:'DM Mono',monospace;font-size:11px;color:rgba(253,249,240,.45);letter-spacing:1px}
+.tc-player-list{padding:6px 0}
+.tc-player-row{display:grid;grid-template-columns:20px 1fr 52px 44px 44px 44px 44px;gap:4px;padding:6px 12px;align-items:center;border-bottom:1px solid #ede5d0;font-size:13px}
+.tc-player-row:last-child{border-bottom:none}
+.tc-player-row.counting{background:rgba(201,168,76,.08)}
+.tc-player-row.missed{opacity:.45}
+.tc-pdot{width:7px;height:7px;border-radius:50%}
+.tc-pdot.c{background:var(--gold)}.tc-pdot.m{background:#bbb}.tc-pdot.n{background:transparent}
+.tc-pname{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-pname.counting{font-weight:600;color:var(--green)}
+.tc-pname.missed{text-decoration:line-through}
+.tc-pscore{font-family:'DM Mono',monospace;font-size:12px;text-align:center}
+.tc-pscore.under{color:var(--red)}.tc-pscore.over{color:var(--blue)}.tc-pscore.even{color:var(--text-lt)}
+.tc-col-head{display:grid;grid-template-columns:20px 1fr 52px 44px 44px 44px 44px;gap:4px;padding:4px 12px 4px;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--text-lt);text-transform:uppercase;border-bottom:1px solid var(--cream-dk)}
+.tc-col-head div{text-align:center}.tc-col-head div:nth-child(2){text-align:left}
+
 /* Toast */
 .toast{position:fixed;bottom:22px;right:22px;background:var(--green);color:var(--cream);border:1px solid var(--gold);border-radius:var(--r);padding:11px 18px;font-family:'DM Mono',monospace;font-size:13px;z-index:999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:340px}
 .toast.show{transform:translateY(0);opacity:1}
@@ -419,6 +443,9 @@ function renderTournament(){
           round score as a penalty for each missing player slot in Rounds 3 & 4.
         </div>
       </div>
+
+      <div class="section-label">Team Player Breakdown</div>
+      <div class="team-cards">${renderTeamCards(ranked)}</div>
     </div>
   </div>
 
@@ -475,7 +502,51 @@ function renderTournament(){
   </div>`;
 }
 
-function renderTeamRow(td,idx){
+function renderTeamCards(ranked){
+  const cr=currentRound();
+  return ranked.map((td,idx)=>{
+    const rank=idx+1;
+    // Sort players: counting first, then others, then missed cut
+    const sorted=[...td.pd].sort((a,b)=>{
+      if(a.counting&&!b.counting) return -1;
+      if(!a.counting&&b.counting) return 1;
+      if(G.cutSet&&!a.madeCut&&b.madeCut) return 1;
+      if(G.cutSet&&a.madeCut&&!b.madeCut) return -1;
+      const at=playerTotal(a.name,cr)??999,bt=playerTotal(b.name,cr)??999;
+      return at-bt;
+    });
+    return `
+    <div class="tc">
+      <div class="tc-header">
+        <div>
+          <div class="tc-rank">#${rank}</div>
+          <div class="tc-team-name">${esc(td.team.name)}</div>
+        </div>
+        <div class="tc-team-score ${cls(td.teamTotal)}">${fmt(td.teamTotal)}</div>
+      </div>
+      <div class="tc-col-head">
+        <div></div><div>Player</div><div>Total</div>
+        <div>R1</div><div>R2</div><div>R3</div><div>R4</div>
+      </div>
+      <div class="tc-player-list">
+        ${sorted.map(p=>{
+          const tot=playerTotal(p.name,cr);
+          const rowCls=p.counting?'counting':(G.cutSet&&!p.madeCut?'missed':'');
+          const dotCls=p.counting?'c':(G.cutSet&&!p.madeCut?'m':'n');
+          return `
+          <div class="tc-player-row ${rowCls}">
+            <div><div class="tc-pdot ${dotCls}"></div></div>
+            <div class="tc-pname ${rowCls}">${esc(p.name)}</div>
+            <div class="tc-pscore ${cls(tot)}">${fmt(tot)}</div>
+            ${[1,2,3,4].map(r=>`<div class="tc-pscore ${cls(p.rounds[r])}">${fmt(p.rounds[r])}</div>`).join('')}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+
   const rank=idx+1;
   const isOpen=expandedIds.has(td.team.id);
   const rb=rank<=3?`<div class="rank-badge rk${rank}">${rank}</div>`:`<div class="rank-badge rkN">${rank}</div>`;
