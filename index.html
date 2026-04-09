@@ -193,8 +193,8 @@ const TEAMS = [
   { id:1, name:'CC',     players:['Rory McIlroy','Chris Gotterup','Si Woo Kim','Jake Knapp','Jason Day','Aaron Rai'] },
   { id:2, name:'Zeaph',  players:['Ludvig Åberg','Brooks Koepka','Collin Morikawa','Nico Hojgaard','Harris English','Rasmus Neergaard'] },
   { id:3, name:'Nick',   players:['Bryson DeChambeau','Patrick Reed','Viktor Hovland','Shane Lowry','Daniel Burger','Max Homa'] },
-  { id:4, name:'Matt',   players:['Jon Rahm','Robert MacIntyre','Justin Thomas','Corey Conners','Sepp Straka','Keegan Bradley'] },
-  { id:5, name:'Austin', players:['Tommy Fleetwood','Hideki Matsuyama','Sahith Bhatia','Jordan Spieth','Gary Woodland','Lanto Griffin'] },
+  { id:4, name:'Matt',   players:['Jon Rahm','Robert MacIntyre','Sahith Bhatia','Corey Conners','Sepp Straka','Keegan Bradley'] },
+  { id:5, name:'Austin', players:['Tommy Fleetwood','Hideki Matsuyama','Justin Thomas','Jordan Spieth','Gary Woodland','Lanto Griffin'] },
   { id:6, name:'Carson', players:['Cam Young','Justin Rose','Tyrrell Hatton','Maverick McNealy','Marco Penge','Nico Echavarria'] },
   { id:7, name:'TP',     players:['Xander Schauffele','Matt Fitzpatrick','Ryan Fox','Brian Harman','Jacob Bridgeman','JJ Spaun'] },
 ];
@@ -826,19 +826,6 @@ async function fetchLive(){
     await saveG();
     render();
     toast(`Synced scores for ${competitors.filter(c=>matchPlayer(c.athlete?.displayName||'',allPlayers)).length} players ✓`);
-  }catch(e){
-    if(btn){btn.disabled=false;btn.textContent='⚡ Live Scores';}
-    render();
-    toast(`Fetch failed: ${e.message}`,'err');
-  }
-}
-
-    if(updated === 0) throw new Error('No matching players found in ESPN data — tournament may not have started yet');
-
-    autoHighScores();
-    await saveG();
-    render();
-    toast(`Synced ${updated} round scores from ESPN ✓`);
   }catch(e){
     if(btn){btn.disabled=false;btn.textContent='⚡ Live Scores';}
     render();
