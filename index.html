@@ -191,10 +191,10 @@ html,body{min-height:100%;font-family:'Crimson Pro',Georgia,serif;background:var
 const TEAMS = [
   { id:0, name:'JB',     players:['Scottie Scheffler','Min Woo Lee','Russell Henley','Patrick Cantlay','Adam Scott','Sam Burns'] },
   { id:1, name:'CC',     players:['Rory McIlroy','Chris Gotterup','Si Woo Kim','Jake Knapp','Jason Day','Aaron Rai'] },
-  { id:2, name:'Zeph',  players:['Ludvig Åberg','Brooks Koepka','Collin Morikawa','Nico Hojgaard','Harris English','Rasmus Neergaard'] },
+  { id:2, name:'Zeaph',  players:['Ludvig Åberg','Brooks Koepka','Collin Morikawa','Nico Hojgaard','Harris English','Rasmus Neergaard'] },
   { id:3, name:'Nick',   players:['Bryson DeChambeau','Patrick Reed','Viktor Hovland','Shane Lowry','Daniel Burger','Max Homa'] },
-  { id:4, name:'Matt',   players:['Jon Rahm','Robert MacIntyre','Sahith Bhatia','Corey Conners','Sepp Straka','Keegan Bradley'] },
-  { id:5, name:'Austin', players:['Tommy Fleetwood','Hideki Matsuyama','Justin Thomas','Jordan Spieth','Gary Woodland','Lanto Griffin'] },
+  { id:4, name:'Matt',   players:['Jon Rahm','Robert MacIntyre','Justin Thomas','Corey Conners','Sepp Straka','Keegan Bradley'] },
+  { id:5, name:'Austin', players:['Tommy Fleetwood','Hideki Matsuyama','Sahith Bhatia','Jordan Spieth','Gary Woodland','Lanto Griffin'] },
   { id:6, name:'Carson', players:['Cam Young','Justin Rose','Tyrrell Hatton','Maverick McNealy','Marco Penge','Nico Echavarria'] },
   { id:7, name:'TP',     players:['Xander Schauffele','Matt Fitzpatrick','Ryan Fox','Brian Harman','Jacob Bridgeman','JJ Spaun'] },
 ];
@@ -775,30 +775,37 @@ async function fetchLive(){
 
       if(!G.scores[matched]) G.scores[matched] = {};
 
-      // linescores = per-round scores (strokes, not relative to par)
-      // We need to convert: round score - round par
       const linescores = comp.linescores || [];
+      const totalToPar = comp.score?.value ?? null; // cumulative score to par
+      const statusName = comp.status?.type?.name || '';
+      const inProgress = statusName === 'STATUS_IN_PROGRESS';
+
+      let completedRoundsSum = 0;
+      let lastRound = 0;
+
       linescores.forEach((ls, idx) => {
         const r = idx + 1;
         if(r > 4) return;
-        // ESPN gives total strokes; we need score relative to par
-        // period.value is strokes for that round, period.parValue is par
         const strokes = ls.value;
-        const par = ls.parValue ?? 72; // Augusta par is 72
-        if(strokes && strokes > 0 && strokes < 200){
-          G.scores[matched][r] = strokes - par;
+        const par = ls.parValue ?? 72;
+
+        // A completed round has strokes in the range of a real round (60-90)
+        // An in-progress or unplayed round will be 0 or very low
+        if(strokes >= 60 && strokes <= 90){
+          const roundScore = strokes - par;
+          G.scores[matched][r] = roundScore;
+          completedRoundsSum += roundScore;
+          lastRound = r;
           updated++;
         }
       });
 
-      // Fallback: use the overall score if no linescores
-      if(!linescores.length){
-        const score = comp.score?.value;
-        if(score !== undefined && score !== null){
-          // This is cumulative relative to par — store as R1 only if no data
-          if(!G.scores[matched][1]) G.scores[matched][1] = +score;
-          updated++;
-        }
+      // For the in-progress round: derive from total-to-par minus completed rounds
+      // This gives score relative to par on only the holes played so far
+      if(inProgress && totalToPar !== null && lastRound < 4){
+        const inProgressRound = lastRound + 1;
+        G.scores[matched][inProgressRound] = totalToPar - completedRoundsSum;
+        updated++;
       }
     });
 
