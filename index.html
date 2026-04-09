@@ -717,33 +717,36 @@ function bind(){
 // ══════════════════════════════════════════════
 //  LIVE SCORE FETCH
 // ══════════════════════════════════════════════
-// Normalize a name for fuzzy matching: lowercase, remove punctuation
 function normName(n){ return n.toLowerCase().replace(/[^a-z\s]/g,'').replace(/\s+/g,' ').trim(); }
 
-// Check if ESPN name matches one of our roster names
 function matchPlayer(espnName, rosterNames){
   const en = normName(espnName);
   for(const rn of rosterNames){
     const r = normName(rn);
-    // Exact match
     if(en === r) return rn;
-    // Last name match (e.g. "Scheffler" matches "Scottie Scheffler")
-    const enParts = en.split(' ');
-    const rnParts = r.split(' ');
-    const enLast = enParts[enParts.length-1];
-    const rnLast = rnParts[rnParts.length-1];
-    if(enLast === rnLast && enLast.length > 4){
-      // Also check first name initial if available
-      if(enParts.length > 1 && rnParts.length > 1){
-        if(enParts[0][0] === rnParts[0][0]) return rn;
-      } else {
-        return rn;
-      }
+    const enParts=en.split(' '), rnParts=r.split(' ');
+    const enLast=enParts[enParts.length-1], rnLast=rnParts[rnParts.length-1];
+    if(enLast===rnLast && enLast.length>4){
+      if(enParts.length>1&&rnParts.length>1){ if(enParts[0][0]===rnParts[0][0]) return rn; }
+      else return rn;
     }
-    // One name contains the other fully
-    if(en.includes(r) || r.includes(en)) return rn;
+    if(en.includes(r)||r.includes(en)) return rn;
   }
   return null;
+}
+
+// Parse ESPN display values like "-4", "E", "+2", "68" into score-to-par
+function parseScore(disp, par){
+  if(disp === null || disp === undefined) return null;
+  const s = String(disp).trim();
+  if(s === '' || s === '-') return null;
+  if(s === 'E') return 0;
+  const n = parseFloat(s);
+  if(isNaN(n)) return null;
+  // If it looks like raw strokes (60-90), convert to relative to par
+  if(n >= 60 && n <= 90) return n - (par || 72);
+  // Otherwise treat as already relative to par
+  return n;
 }
 
 async function fetchLive(){
@@ -752,7 +755,6 @@ async function fetchLive(){
   const allPlayers=[...new Set(TEAMS.flatMap(t=>t.players.filter(p=>p.trim())))];
 
   try{
-    // ESPN public leaderboard API — no key required
     const resp = await fetch(
       'https://site.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=pga',
       { headers: { 'Accept': 'application/json' } }
@@ -760,11 +762,9 @@ async function fetchLive(){
     if(!resp.ok) throw new Error(`ESPN API error: ${resp.status}`);
     const data = await resp.json();
 
-    // Dig into the event competitors
     const events = data?.events;
     if(!events?.length) throw new Error('No tournament data found');
-    const event = events[0];
-    const competitors = event?.competitions?.[0]?.competitors;
+    const competitors = events[0]?.competitions?.[0]?.competitors;
     if(!competitors?.length) throw new Error('No competitor data');
 
     let updated = 0;
@@ -776,38 +776,62 @@ async function fetchLive(){
       if(!G.scores[matched]) G.scores[matched] = {};
 
       const linescores = comp.linescores || [];
-      const totalToPar = comp.score?.value ?? null; // cumulative score to par
-      const statusName = comp.status?.type?.name || '';
-      const inProgress = statusName === 'STATUS_IN_PROGRESS';
+      const par = 72; // Augusta National
 
-      let completedRoundsSum = 0;
-      let lastRound = 0;
+      // Total score to par — prefer displayValue ("E", "-5") over raw value
+      const totalToPar = parseScore(comp.score?.displayValue, par)
+                      ?? parseScore(comp.score?.value, par);
+
+      const inProgress = comp.status?.type?.name === 'STATUS_IN_PROGRESS';
+
+      let completedSum = 0;
+      let roundsComplete = 0;
 
       linescores.forEach((ls, idx) => {
         const r = idx + 1;
         if(r > 4) return;
-        const strokes = ls.value;
-        const par = ls.parValue ?? 72;
 
-        // A completed round has strokes in the range of a real round (60-90)
-        // An in-progress or unplayed round will be 0 or very low
-        if(strokes >= 60 && strokes <= 90){
-          const roundScore = strokes - par;
-          G.scores[matched][r] = roundScore;
-          completedRoundsSum += roundScore;
-          lastRound = r;
+        // Use displayValue first ("68", "-4", "E"), then fall back to value
+        const disp = ls.displayValue ?? ls.value;
+        const score = parseScore(disp, par);
+        if(score === null) return;
+
+        // Only store if this is a complete round (not the in-progress one)
+        // A complete round: value is strokes 60-90, or we're not in progress yet
+        const rawVal = ls.value ?? 0;
+        const isCompleteRound = rawVal >= 60 || (!inProgress);
+
+        if(isCompleteRound){
+          G.scores[matched][r] = score;
+          completedSum += score;
+          roundsComplete = r;
           updated++;
         }
       });
 
-      // For the in-progress round: derive from total-to-par minus completed rounds
+      // In-progress round: use total-to-par minus completed rounds
       // This gives score relative to par on only the holes played so far
-      if(inProgress && totalToPar !== null && lastRound < 4){
-        const inProgressRound = lastRound + 1;
-        G.scores[matched][inProgressRound] = totalToPar - completedRoundsSum;
-        updated++;
+      if(inProgress && totalToPar !== null){
+        const currentRound = roundsComplete + 1;
+        if(currentRound <= 4){
+          G.scores[matched][currentRound] = totalToPar - completedSum;
+          updated++;
+        }
       }
     });
+
+    if(updated === 0) throw new Error('No matching players found — tournament may not have started yet');
+
+    autoHighScores();
+    await saveG();
+    render();
+    toast(`Synced scores for ${competitors.filter(c=>matchPlayer(c.athlete?.displayName||'',allPlayers)).length} players ✓`);
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='⚡ Live Scores';}
+    render();
+    toast(`Fetch failed: ${e.message}`,'err');
+  }
+}
 
     if(updated === 0) throw new Error('No matching players found in ESPN data — tournament may not have started yet');
 
