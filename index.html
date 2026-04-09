@@ -796,10 +796,10 @@ async function fetchLive(){
         const score = parseScore(disp, par);
         if(score === null) return;
 
-        // Only store if this is a complete round (not the in-progress one)
-        // A complete round: value is strokes 60-90, or we're not in progress yet
+        // Only store if this looks like a genuinely completed round
+        // Completed rounds have raw strokes in the 60-90 range
         const rawVal = ls.value ?? 0;
-        const isCompleteRound = rawVal >= 60 || (!inProgress);
+        const isCompleteRound = rawVal >= 60 && rawVal <= 90;
 
         if(isCompleteRound){
           G.scores[matched][r] = score;
